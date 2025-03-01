@@ -3,13 +3,13 @@ import { getAuth } from "firebase/auth"
 import { getFirestore } from "firebase/firestore"
 
 const firebaseConfig = {
-  apiKey: "AIzaSyArK5UykiUqF7QJv8hb57ylP8X6Ms2uxgE",
-  authDomain: "chatwave-e0794.firebaseapp.com",
-  projectId: "chatwave-e0794",
-  storageBucket: "chatwave-e0794.firebasestorage.app",
-  messagingSenderId: "120972041509",
-  appId: "1:120972041509:web:c3dcc8dcf8ceb7bc93cecc",
-  measurementId: "G-3YGHT9EKEL"
+  apiKey: "AIzaSyCvTKhQTFSnymeRsElMeg6o353vy_wZOOA",
+  authDomain: "chat-app-61f30.firebaseapp.com",
+  projectId: "chat-app-61f30",
+  storageBucket: "chat-app-61f30.firebasestorage.app",
+  messagingSenderId: "9141000799",
+  appId: "1:9141000799:web:b5af82ca9037be4dd399ea",
+  measurementId: "G-RZ3RDQQW52"
 };
 
 // Initialize Firebase

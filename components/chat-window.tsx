@@ -20,9 +20,6 @@ import {
   serverTimestamp,
   updateDoc,
   setDoc,
-  getDocs,
-  where,
-  writeBatch
 } from "firebase/firestore"
 import type { Message, User } from "@/types"
 import { MessageItem } from "@/components/message-item"
@@ -68,29 +65,6 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
             photoURL: otherUserData.photoURL,
           })
         }
-        
-        // Mark all messages as read when chat is selected
-        const markAllAsRead = async () => {
-          const messagesQuery = query(
-            collection(db, "chats", selectedChat, "messages"),
-            where("senderId", "!=", user.id),
-            where("read", "==", false)
-          )
-          const unreadSnapshot = await getDocs(messagesQuery)
-          
-          // Batch update to mark all as read
-          if (unreadSnapshot.size > 0) {
-            const batch = writeBatch(db)
-            unreadSnapshot.docs.forEach((doc) => {
-              batch.update(doc.ref, { read: true })
-            })
-            await batch.commit()
-            console.log(`Marked ${unreadSnapshot.size} messages as read`)
-          }
-        }
-        
-        // Call the function when chat is selected
-        markAllAsRead()
       } catch (error) {
         console.error("Error fetching chat details:", error)
       }
@@ -124,9 +98,7 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
     const unsubscribeTyping = onSnapshot(typingRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data()
-        if (otherUser) {
-          setOtherUserTyping(data[otherUser.id] || false)
-        }
+        setOtherUserTyping(data[otherUser?.id || ""] || false)
       }
     })
 
@@ -134,12 +106,12 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
       unsubscribeMessages()
       unsubscribeTyping()
     }
-  }, [selectedChat, user])
+  }, [selectedChat, user]) // Removed otherUser?.id as dependency
 
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, otherUserTyping])
+  }, [messages]) // Removed otherUserTyping as dependency
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -174,13 +146,6 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
       const typingRef = doc(db, "chats", selectedChat, "typing", "status")
       await updateDoc(typingRef, {
         [user.id]: false,
-      }).catch(async (error) => {
-        // If document doesn't exist, create it
-        if (error.code === "not-found") {
-          await setDoc(typingRef, {
-            [user.id]: false,
-          })
-        }
       })
 
       setIsTyping(false)
@@ -218,13 +183,6 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
       const timeout = setTimeout(async () => {
         await updateDoc(typingRef, {
           [user.id]: false,
-        }).catch(async (error) => {
-          // If document doesn't exist, create it
-          if (error.code === "not-found") {
-            await setDoc(typingRef, {
-              [user.id]: false,
-            })
-          }
         })
         setIsTyping(false)
       }, 3000)
@@ -302,3 +260,4 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
     </div>
   )
 }
+
