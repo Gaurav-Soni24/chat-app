@@ -41,13 +41,6 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         const otherUserDoc = await getDoc(doc(db, "users", otherUserId))
         const otherUserData = otherUserDoc.data()
 
-        // Log chat data for debugging
-        console.log("Chat data:", {
-          id: doc.id,
-          lastMessage: chatData.lastMessage,
-          lastMessageTime: chatData.lastMessageTime,
-        })
-
         return {
           id: doc.id,
           lastMessage: chatData.lastMessage || null,
@@ -64,22 +57,21 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
       })
 
       const resolvedChats = await Promise.all(chatPromises)
-      // Ensure proper sorting by lastMessageTime
+      
+      // Fix: Properly sort chats by lastMessageTime
       const sortedChats = resolvedChats.sort((a, b) => {
+        // Place chats with no lastMessageTime at the bottom
+        if (!a.lastMessageTime && !b.lastMessageTime) return 0
         if (!a.lastMessageTime) return 1
         if (!b.lastMessageTime) return -1
-        return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+        
+        // Convert string dates to timestamps for proper comparison
+        const timeA = new Date(a.lastMessageTime).getTime()
+        const timeB = new Date(b.lastMessageTime).getTime()
+        
+        // Sort in descending order (newest first)
+        return timeB - timeA
       })
-
-      // Log sorted chats for debugging
-      console.log(
-        "Sorted chats:",
-        sortedChats.map((c) => ({
-          id: c.id,
-          lastMessageTime: c.lastMessageTime,
-          otherUser: c.otherUser.displayName,
-        })),
-      )
 
       setChats(sortedChats)
     })
@@ -145,7 +137,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
       await setDoc(newChatRef, {
         participants: [user.id, otherUserId],
         createdAt: currentTime,
-        lastMessageTime: currentTime, // Add this line to ensure sorting works
+        lastMessageTime: currentTime, 
       })
 
       setSelectedChat(newChatRef.id)
@@ -157,9 +149,30 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
     }
   }
 
+  // Filter chats based on search term
   const filteredChats = chats.filter((chat) =>
     chat.otherUser.displayName.toLowerCase().includes(searchTerm.toLowerCase()),
   )
+
+  // Format date for chat timestamp display
+  const formatMessageTime = (timestamp: string) => {
+    const messageDate = new Date(timestamp)
+    const now = new Date()
+    
+    // If message is from today, show only time
+    if (messageDate.toDateString() === now.toDateString()) {
+      return messageDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    }
+    
+    // If message is from this week, show day name
+    const diffDays = Math.floor((now.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24))
+    if (diffDays < 7) {
+      return messageDate.toLocaleDateString([], { weekday: 'short' })
+    }
+    
+    // Otherwise show date
+    return messageDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
 
   return (
     <div className="w-80 border-r bg-slate-100 dark:bg-slate-800 flex flex-col h-full">
@@ -168,7 +181,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
           <div className="flex items-center space-x-2">
             <Avatar>
               <AvatarImage src={user?.photoURL} alt={user?.displayName} />
-              <AvatarFallback>{user?.displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
+              <AvatarFallback>{user?.displayName?.substring(0, 2).toUpperCase() || "U"}</AvatarFallback>
             </Avatar>
             <div>
               <p className="font-medium text-sm">{user?.displayName}</p>
@@ -248,14 +261,14 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
                 </div>
                 {chat.lastMessageTime && (
                   <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                    {new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatMessageTime(chat.lastMessageTime)}
                   </span>
                 )}
               </button>
             ))
           ) : (
             <div className="text-center py-8 text-slate-500 dark:text-slate-400">
-              {searchTerm ? "No conversations found" : "No chat yet"}
+              {searchTerm ? "No conversations found" : "No chats yet"}
             </div>
           )}
         </div>
@@ -263,4 +276,3 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
     </div>
   )
 }
-
