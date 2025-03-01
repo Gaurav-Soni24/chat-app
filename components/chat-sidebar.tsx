@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { LogOut, Plus, Search } from "lucide-react"
 import { auth, db } from "@/lib/firebase"
 import { signOut } from "firebase/auth"
-import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, where } from "firebase/firestore"
+import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, where } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import type { Chat, User } from "@/types"
 import { deleteCookie } from "@/lib/cookies"
@@ -32,12 +32,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
   useEffect(() => {
     if (!user) return
 
-    const q = query(
-      collection(db, "chats"), 
-      where("participants", "array-contains", user.id),
-      // This orderBy doesn't work on the initial query due to Firebase limitations,
-      // but we'll sort the results in memory
-    )
+    const q = query(collection(db, "chats"), where("participants", "array-contains", user.id))
 
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const chatPromises = snapshot.docs.map(async (doc) => {
@@ -46,37 +41,17 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         const otherUserDoc = await getDoc(doc(db, "users", otherUserId))
         const otherUserData = otherUserDoc.data()
 
-        // Get the last message from the messages subcollection
-        let lastMessage = chatData.lastMessage || null
-        let lastMessageTime = chatData.lastMessageTime || null
-        let lastMessageSender = chatData.lastMessageSender || null
-
-        // If we don't have lastMessage stored in the chat document, try to fetch it
-        // This is a fallback in case you're not updating the chat document with lastMessage
-        if (!lastMessage) {
-          try {
-            const messagesQuery = query(
-              collection(db, "chats", doc.id, "messages"),
-              orderBy("timestamp", "desc"),
-            )
-            const messagesSnapshot = await getDocs(messagesQuery)
-            
-            if (!messagesSnapshot.empty) {
-              const latestMessage = messagesSnapshot.docs[0].data()
-              lastMessage = latestMessage.text || "Media content"
-              lastMessageTime = latestMessage.timestamp || null
-              lastMessageSender = latestMessage.senderId || null
-            }
-          } catch (error) {
-            console.error("Error fetching messages:", error)
-          }
-        }
+        // Log chat data for debugging
+        console.log("Chat data:", {
+          id: doc.id,
+          lastMessage: chatData.lastMessage,
+          lastMessageTime: chatData.lastMessageTime,
+        })
 
         return {
           id: doc.id,
-          lastMessage,
-          lastMessageTime,
-          lastMessageSender,
+          lastMessage: chatData.lastMessage || null,
+          lastMessageTime: chatData.lastMessageTime || null,
           participants: chatData.participants,
           otherUser: {
             id: otherUserId,
@@ -89,21 +64,22 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
       })
 
       const resolvedChats = await Promise.all(chatPromises)
-      
-      // Fix: Properly sort chats by lastMessageTime
+      // Ensure proper sorting by lastMessageTime
       const sortedChats = resolvedChats.sort((a, b) => {
-        // Place chats with no lastMessageTime at the bottom
-        if (!a.lastMessageTime && !b.lastMessageTime) return 0
         if (!a.lastMessageTime) return 1
         if (!b.lastMessageTime) return -1
-        
-        // Convert string dates to timestamps for proper comparison
-        const timeA = new Date(a.lastMessageTime).getTime()
-        const timeB = new Date(b.lastMessageTime).getTime()
-        
-        // Sort in descending order (newest first)
-        return timeB - timeA
+        return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
       })
+
+      // Log sorted chats for debugging
+      console.log(
+        "Sorted chats:",
+        sortedChats.map((c) => ({
+          id: c.id,
+          lastMessageTime: c.lastMessageTime,
+          otherUser: c.otherUser.displayName,
+        })),
+      )
 
       setChats(sortedChats)
     })
@@ -169,7 +145,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
       await setDoc(newChatRef, {
         participants: [user.id, otherUserId],
         createdAt: currentTime,
-        lastMessageTime: currentTime, 
+        lastMessageTime: currentTime, // Add this line to ensure sorting works
       })
 
       setSelectedChat(newChatRef.id)
@@ -181,47 +157,9 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
     }
   }
 
-  // Filter chats based on search term
   const filteredChats = chats.filter((chat) =>
     chat.otherUser.displayName.toLowerCase().includes(searchTerm.toLowerCase()),
   )
-
-  // Format date for chat timestamp display
-  const formatMessageTime = (timestamp: string) => {
-    const messageDate = new Date(timestamp)
-    const now = new Date()
-    
-    // If message is from today, show only time
-    if (messageDate.toDateString() === now.toDateString()) {
-      return messageDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    }
-    
-    // If message is from this week, show day name
-    const diffDays = Math.floor((now.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays < 7) {
-      return messageDate.toLocaleDateString([], { weekday: 'short' })
-    }
-    
-    // Otherwise show date
-    return messageDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
-  }
-  
-  // Get the preview text for the last message
-  const getLastMessagePreview = (chat: Chat) => {
-    if (!chat.lastMessage) return "No messages yet"
-    
-    // Show "You: " or sender name prefix for the last message
-    const isFromCurrentUser = chat.lastMessageSender === user?.id
-    const prefix = isFromCurrentUser ? "You: " : ""
-    
-    // Truncate message if too long
-    const maxLength = isFromCurrentUser ? 20 : 25 // Shorter limit when showing "You: " prefix
-    if (chat.lastMessage.length > maxLength) {
-      return `${prefix}${chat.lastMessage.substring(0, maxLength)}...`
-    }
-    
-    return `${prefix}${chat.lastMessage}`
-  }
 
   return (
     <div className="w-80 border-r bg-slate-100 dark:bg-slate-800 flex flex-col h-full">
@@ -230,7 +168,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
           <div className="flex items-center space-x-2">
             <Avatar>
               <AvatarImage src={user?.photoURL} alt={user?.displayName} />
-              <AvatarFallback>{user?.displayName?.substring(0, 2).toUpperCase() || "U"}</AvatarFallback>
+              <AvatarFallback>{user?.displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
             </Avatar>
             <div>
               <p className="font-medium text-sm">{user?.displayName}</p>
@@ -305,19 +243,19 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
                 <div className="flex-1 overflow-hidden text-left">
                   <p className="font-medium text-sm truncate">{chat.otherUser.displayName}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                    {getLastMessagePreview(chat)}
+                    {chat.lastMessage ? chat.lastMessage : "No messages yet"}
                   </p>
                 </div>
                 {chat.lastMessageTime && (
                   <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                    {formatMessageTime(chat.lastMessageTime)}
+                    {new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 )}
               </button>
             ))
           ) : (
             <div className="text-center py-8 text-slate-500 dark:text-slate-400">
-              {searchTerm ? "No conversations found" : "No chats yet"}
+              {searchTerm ? "No conversations found" : "No conversations yet"}
             </div>
           )}
         </div>
@@ -325,3 +263,4 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
     </div>
   )
 }
+
