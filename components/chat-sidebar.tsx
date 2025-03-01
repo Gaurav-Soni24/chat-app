@@ -10,7 +10,17 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { LogOut, Plus, Search } from "lucide-react"
 import { auth, db } from "@/lib/firebase"
 import { signOut } from "firebase/auth"
-import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, where } from "firebase/firestore"
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  onSnapshot, 
+  query, 
+  where, 
+  setDoc, 
+  writeBatch 
+} from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import type { Chat, User } from "@/types"
 import { deleteCookie } from "@/lib/cookies"
@@ -29,7 +39,26 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
   const [error, setError] = useState("")
   const router = useRouter()
 
-  // In ChatSidebar.tsx, inside the useEffect that fetches chats
+  // Format time ago helper function
+  const formatTimeAgo = (timestamp: string) => {
+    if (!timestamp) return "";
+    
+    const now = new Date();
+    const messageTime = new Date(timestamp);
+    const diffInMinutes = Math.floor((now.getTime() - messageTime.getTime()) / (60 * 1000));
+    
+    if (diffInMinutes < 1) return "Just now";
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays < 7) return `${diffInDays}d ago`;
+    
+    return messageTime.toLocaleDateString();
+  };
+
   useEffect(() => {
     if (!user) return
 
@@ -41,22 +70,31 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         const otherUserId = chatData.participants.find((id: string) => id !== user.id)
         const otherUserDoc = await getDoc(doc(db, "users", otherUserId))
         const otherUserData = otherUserDoc.data()
-
+        
         // Get unread messages count
         const messagesQuery = query(
           collection(db, "chats", doc.id, "messages"),
           where("senderId", "!=", user.id),
           where("read", "==", false)
         )
+        
         const unreadSnapshot = await getDocs(messagesQuery)
         const unreadCount = unreadSnapshot.size
+
+        // Log chat data for debugging
+        console.log("Chat data:", {
+          id: doc.id,
+          lastMessage: chatData.lastMessage,
+          lastMessageTime: chatData.lastMessageTime,
+          unreadCount: unreadCount
+        })
 
         return {
           id: doc.id,
           lastMessage: chatData.lastMessage || null,
           lastMessageTime: chatData.lastMessageTime || null,
           participants: chatData.participants,
-          unreadCount, // Add unread count
+          unreadCount: unreadCount,
           otherUser: {
             id: otherUserId,
             displayName: otherUserData?.displayName || "User",
@@ -75,6 +113,17 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
       })
 
+      // Log sorted chats for debugging
+      console.log(
+        "Sorted chats:",
+        sortedChats.map((c) => ({
+          id: c.id,
+          lastMessageTime: c.lastMessageTime,
+          otherUser: c.otherUser.displayName,
+          unreadCount: c.unreadCount
+        })),
+      )
+
       setChats(sortedChats)
     })
 
@@ -90,26 +139,6 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
       console.error("Error signing out:", error)
     }
   }
-
-  // Add a function to format the timestamp relative to current time
-  const formatTimeAgo = (timestamp: string) => {
-    if (!timestamp) return "";
-
-    const now = new Date();
-    const messageTime = new Date(timestamp);
-    const diffInMinutes = Math.floor((now.getTime() - messageTime.getTime()) / (60 * 1000));
-
-    if (diffInMinutes < 1) return "Just now";
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-
-    const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24) return `${diffInHours}h ago`;
-
-    const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays < 7) return `${diffInDays}d ago`;
-
-    return messageTime.toLocaleDateString();
-  };
 
   const handleCreateNewChat = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -182,7 +211,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
           <div className="flex items-center space-x-2">
             <Avatar>
               <AvatarImage src={user?.photoURL} alt={user?.displayName} />
-              <AvatarFallback>{user?.displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
+              <AvatarFallback>{user?.displayName?.substring(0, 2).toUpperCase()}</AvatarFallback>
             </Avatar>
             <div>
               <p className="font-medium text-sm">{user?.displayName}</p>
@@ -241,28 +270,30 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         <div className="p-2">
           {filteredChats.length > 0 ? (
             <>
-              {/* Recent chats section */}
               <div className="px-3 py-2">
                 <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400">Recent Chats</h3>
               </div>
               {filteredChats.map((chat) => (
                 <button
                   key={chat.id}
-                  className={`w-full flex items-center space-x-3 p-2 rounded-lg transition-colors ${selectedChat === chat.id
-                    ? "bg-slate-200 dark:bg-slate-700"
-                    : "hover:bg-slate-200 dark:hover:bg-slate-700"
-                    }`}
+                  className={`w-full flex items-center space-x-3 p-2 rounded-lg transition-colors ${
+                    selectedChat === chat.id
+                      ? "bg-slate-200 dark:bg-slate-700"
+                      : "hover:bg-slate-200 dark:hover:bg-slate-700"
+                  }`}
                   onClick={() => setSelectedChat(chat.id)}
                 >
-                  <Avatar className="h-10 w-10 relative">
-                    <AvatarImage src={chat.otherUser.photoURL} alt={chat.otherUser.displayName} />
-                    <AvatarFallback>{chat.otherUser.displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                  <div className="relative">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={chat.otherUser.photoURL} alt={chat.otherUser.displayName} />
+                      <AvatarFallback>{chat.otherUser.displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                    </Avatar>
                     {chat.unreadCount > 0 && (
                       <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                         {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
                       </span>
                     )}
-                  </Avatar>
+                  </div>
                   <div className="flex-1 overflow-hidden text-left">
                     <p className="font-medium text-sm truncate">{chat.otherUser.displayName}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
@@ -287,4 +318,3 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
     </div>
   )
 }
-

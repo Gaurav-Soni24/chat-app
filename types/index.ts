@@ -1,12 +1,10 @@
-import type { Timestamp } from "firebase/firestore"
-
-// Add this to your @/types.ts file
+// Add this to your @/types file (e.g., types/index.ts)
 
 export interface User {
   id: string
   email: string
   displayName: string
-  photoURL: string
+  photoURL?: string
 }
 
 export interface Chat {
@@ -14,7 +12,7 @@ export interface Chat {
   lastMessage: string | null
   lastMessageTime: string | null
   participants: string[]
-  unreadCount: number
+  unreadCount: number // Added unreadCount
   otherUser: {
     id: string
     displayName: string
@@ -27,8 +25,7 @@ export interface Message {
   text: string
   senderId: string
   senderName: string
-  timestamp: Timestamp
+  timestamp: any
   read: boolean
   reactions: Record<string, string>
 }
-
