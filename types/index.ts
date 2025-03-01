@@ -13,8 +13,8 @@ export interface Chat {
   id: string
   lastMessage: string | null
   lastMessageTime: string | null
-  lastMessageSender: string | null // Add this line
   participants: string[]
+  unreadCount: number
   otherUser: {
     id: string
     displayName: string

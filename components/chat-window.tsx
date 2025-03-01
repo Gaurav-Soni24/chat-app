@@ -9,17 +9,20 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Send } from "lucide-react"
 import { db } from "@/lib/firebase"
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
+import { 
+  addDoc, 
+  collection, 
+  doc, 
+  getDoc, 
+  onSnapshot, 
+  orderBy, 
+  query, 
+  serverTimestamp, 
+  updateDoc, 
   setDoc,
+  getDocs,
+  where,
+  writeBatch
 } from "firebase/firestore"
 import type { Message, User } from "@/types"
 import { MessageItem } from "@/components/message-item"
@@ -82,6 +85,27 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
       })) as Message[]
 
       setMessages(newMessages)
+
+      const markAllAsRead = async () => {
+        const messagesQuery = query(
+          collection(db, "chats", selectedChat, "messages"),
+          where("senderId", "!=", user.id),
+          where("read", "==", false)
+        )
+        const unreadSnapshot = await getDocs(messagesQuery)
+
+        // Batch update to mark all as read
+        const batch = writeBatch(db)
+        unreadSnapshot.docs.forEach((doc) => {
+          batch.update(doc.ref, { read: true })
+        })
+
+        if (unreadSnapshot.size > 0) {
+          await batch.commit()
+        }
+      }
+
+      markAllAsRead()
 
       // Mark messages as read
       newMessages.forEach(async (message) => {

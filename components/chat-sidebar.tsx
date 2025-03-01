@@ -29,6 +29,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
   const [error, setError] = useState("")
   const router = useRouter()
 
+  // In ChatSidebar.tsx, inside the useEffect that fetches chats
   useEffect(() => {
     if (!user) return
 
@@ -41,18 +42,21 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         const otherUserDoc = await getDoc(doc(db, "users", otherUserId))
         const otherUserData = otherUserDoc.data()
 
-        // Log chat data for debugging
-        console.log("Chat data:", {
-          id: doc.id,
-          lastMessage: chatData.lastMessage,
-          lastMessageTime: chatData.lastMessageTime,
-        })
+        // Get unread messages count
+        const messagesQuery = query(
+          collection(db, "chats", doc.id, "messages"),
+          where("senderId", "!=", user.id),
+          where("read", "==", false)
+        )
+        const unreadSnapshot = await getDocs(messagesQuery)
+        const unreadCount = unreadSnapshot.size
 
         return {
           id: doc.id,
           lastMessage: chatData.lastMessage || null,
           lastMessageTime: chatData.lastMessageTime || null,
           participants: chatData.participants,
+          unreadCount, // Add unread count
           otherUser: {
             id: otherUserId,
             displayName: otherUserData?.displayName || "User",
@@ -71,16 +75,6 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
       })
 
-      // Log sorted chats for debugging
-      console.log(
-        "Sorted chats:",
-        sortedChats.map((c) => ({
-          id: c.id,
-          lastMessageTime: c.lastMessageTime,
-          otherUser: c.otherUser.displayName,
-        })),
-      )
-
       setChats(sortedChats)
     })
 
@@ -96,6 +90,26 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
       console.error("Error signing out:", error)
     }
   }
+
+  // Add a function to format the timestamp relative to current time
+  const formatTimeAgo = (timestamp: string) => {
+    if (!timestamp) return "";
+
+    const now = new Date();
+    const messageTime = new Date(timestamp);
+    const diffInMinutes = Math.floor((now.getTime() - messageTime.getTime()) / (60 * 1000));
+
+    if (diffInMinutes < 1) return "Just now";
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays < 7) return `${diffInDays}d ago`;
+
+    return messageTime.toLocaleDateString();
+  };
 
   const handleCreateNewChat = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -225,34 +239,45 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
       </div>
       <ScrollArea className="flex-1">
         <div className="p-2">
+        // Update the chat list rendering section
           {filteredChats.length > 0 ? (
-            filteredChats.map((chat) => (
-              <button
-                key={chat.id}
-                className={`w-full flex items-center space-x-3 p-2 rounded-lg transition-colors ${
-                  selectedChat === chat.id
+            <>
+              {/* Recent chats section */}
+              <div className="px-3 py-2">
+                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400">Recent Chats</h3>
+              </div>
+              {filteredChats.map((chat) => (
+                <button
+                  key={chat.id}
+                  className={`w-full flex items-center space-x-3 p-2 rounded-lg transition-colors ${selectedChat === chat.id
                     ? "bg-slate-200 dark:bg-slate-700"
                     : "hover:bg-slate-200 dark:hover:bg-slate-700"
-                }`}
-                onClick={() => setSelectedChat(chat.id)}
-              >
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={chat.otherUser.photoURL} alt={chat.otherUser.displayName} />
-                  <AvatarFallback>{chat.otherUser.displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div className="flex-1 overflow-hidden text-left">
-                  <p className="font-medium text-sm truncate">{chat.otherUser.displayName}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                    {chat.lastMessage ? chat.lastMessage : "No messages yet"}
-                  </p>
-                </div>
-                {chat.lastMessageTime && (
-                  <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                    {new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                )}
-              </button>
-            ))
+                    }`}
+                  onClick={() => setSelectedChat(chat.id)}
+                >
+                  <Avatar className="h-10 w-10 relative">
+                    <AvatarImage src={chat.otherUser.photoURL} alt={chat.otherUser.displayName} />
+                    <AvatarFallback>{chat.otherUser.displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                    {chat.unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                        {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
+                      </span>
+                    )}
+                  </Avatar>
+                  <div className="flex-1 overflow-hidden text-left">
+                    <p className="font-medium text-sm truncate">{chat.otherUser.displayName}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                      {chat.lastMessage ? chat.lastMessage : "No messages yet"}
+                    </p>
+                  </div>
+                  {chat.lastMessageTime && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                      {formatTimeAgo(chat.lastMessageTime)}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </>
           ) : (
             <div className="text-center py-8 text-slate-500 dark:text-slate-400">
               {searchTerm ? "No conversations found" : "No conversations yet"}
