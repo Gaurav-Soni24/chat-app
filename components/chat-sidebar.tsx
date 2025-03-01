@@ -255,7 +255,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
             ))
           ) : (
             <div className="text-center py-8 text-slate-500 dark:text-slate-400">
-              {searchTerm ? "No conversations found" : "No conversations yet"}
+              {searchTerm ? "No conversations found" : "No chat yet"}
             </div>
           )}
         </div>
