@@ -39,6 +39,40 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!messageInput.trim() || !user || !selectedChat) return
+
+    try {
+      // Reference to the chat document
+      const chatRef = doc(db, "chats", selectedChat)
+
+      // Add message to subcollection
+      const messageRef = doc(collection(db, "chats", selectedChat, "messages"))
+      const timestamp = new Date().toISOString()
+
+      await setDoc(messageRef, {
+        text: messageInput,
+        senderId: user.id,
+        timestamp: timestamp,
+        // Add other message properties as needed
+      })
+
+      // Update the chat document with last message information
+      await updateDoc(chatRef, {
+        lastMessage: messageInput,
+        lastMessageTime: timestamp,
+        lastMessageSender: user.id
+      })
+
+      setMessageInput("")
+      // Scroll to bottom or other logic...
+    } catch (error) {
+      console.error("Error sending message:", error)
+    }
+  }
+
   // Fetch chat details and messages
   useEffect(() => {
     if (!selectedChat || !user) {

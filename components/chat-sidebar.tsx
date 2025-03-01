@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { LogOut, Plus, Search } from "lucide-react"
 import { auth, db } from "@/lib/firebase"
 import { signOut } from "firebase/auth"
-import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, where } from "firebase/firestore"
+import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, where } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import type { Chat, User } from "@/types"
 import { deleteCookie } from "@/lib/cookies"
@@ -32,7 +32,12 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
   useEffect(() => {
     if (!user) return
 
-    const q = query(collection(db, "chats"), where("participants", "array-contains", user.id))
+    const q = query(
+      collection(db, "chats"), 
+      where("participants", "array-contains", user.id),
+      // This orderBy doesn't work on the initial query due to Firebase limitations,
+      // but we'll sort the results in memory
+    )
 
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const chatPromises = snapshot.docs.map(async (doc) => {
@@ -41,10 +46,37 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         const otherUserDoc = await getDoc(doc(db, "users", otherUserId))
         const otherUserData = otherUserDoc.data()
 
+        // Get the last message from the messages subcollection
+        let lastMessage = chatData.lastMessage || null
+        let lastMessageTime = chatData.lastMessageTime || null
+        let lastMessageSender = chatData.lastMessageSender || null
+
+        // If we don't have lastMessage stored in the chat document, try to fetch it
+        // This is a fallback in case you're not updating the chat document with lastMessage
+        if (!lastMessage) {
+          try {
+            const messagesQuery = query(
+              collection(db, "chats", doc.id, "messages"),
+              orderBy("timestamp", "desc"),
+            )
+            const messagesSnapshot = await getDocs(messagesQuery)
+            
+            if (!messagesSnapshot.empty) {
+              const latestMessage = messagesSnapshot.docs[0].data()
+              lastMessage = latestMessage.text || "Media content"
+              lastMessageTime = latestMessage.timestamp || null
+              lastMessageSender = latestMessage.senderId || null
+            }
+          } catch (error) {
+            console.error("Error fetching messages:", error)
+          }
+        }
+
         return {
           id: doc.id,
-          lastMessage: chatData.lastMessage || null,
-          lastMessageTime: chatData.lastMessageTime || null,
+          lastMessage,
+          lastMessageTime,
+          lastMessageSender,
           participants: chatData.participants,
           otherUser: {
             id: otherUserId,
@@ -173,6 +205,23 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
     // Otherwise show date
     return messageDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
   }
+  
+  // Get the preview text for the last message
+  const getLastMessagePreview = (chat: Chat) => {
+    if (!chat.lastMessage) return "No messages yet"
+    
+    // Show "You: " or sender name prefix for the last message
+    const isFromCurrentUser = chat.lastMessageSender === user?.id
+    const prefix = isFromCurrentUser ? "You: " : ""
+    
+    // Truncate message if too long
+    const maxLength = isFromCurrentUser ? 20 : 25 // Shorter limit when showing "You: " prefix
+    if (chat.lastMessage.length > maxLength) {
+      return `${prefix}${chat.lastMessage.substring(0, maxLength)}...`
+    }
+    
+    return `${prefix}${chat.lastMessage}`
+  }
 
   return (
     <div className="w-80 border-r bg-slate-100 dark:bg-slate-800 flex flex-col h-full">
@@ -256,7 +305,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
                 <div className="flex-1 overflow-hidden text-left">
                   <p className="font-medium text-sm truncate">{chat.otherUser.displayName}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                    {chat.lastMessage ? chat.lastMessage : "No messages yet"}
+                    {getLastMessagePreview(chat)}
                   </p>
                 </div>
                 {chat.lastMessageTime && (

@@ -1,5 +1,7 @@
 import type { Timestamp } from "firebase/firestore"
 
+// Add this to your @/types.ts file
+
 export interface User {
   id: string
   email: string
@@ -9,9 +11,10 @@ export interface User {
 
 export interface Chat {
   id: string
-  participants: string[]
   lastMessage: string | null
   lastMessageTime: string | null
+  lastMessageSender: string | null // Add this line
+  participants: string[]
   otherUser: {
     id: string
     displayName: string
