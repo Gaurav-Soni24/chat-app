@@ -60,35 +60,27 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
   };
 
   useEffect(() => {
-    if (!user) return
-
-    const q = query(collection(db, "chats"), where("participants", "array-contains", user.id))
-
+    if (!user) return;
+  
+    const q = query(collection(db, "chats"), where("participants", "array-contains", user.id));
+  
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const chatPromises = snapshot.docs.map(async (doc) => {
-        const chatData = doc.data()
-        const otherUserId = chatData.participants.find((id: string) => id !== user.id)
-        const otherUserDoc = await getDoc(doc(db, "users", otherUserId))
-        const otherUserData = otherUserDoc.data()
-        
+        const chatData = doc.data();
+        const otherUserId = chatData.participants.find((id: string) => id !== user.id);
+        const otherUserDoc = await getDoc(doc(db, "users", otherUserId));
+        const otherUserData = otherUserDoc.data();
+  
         // Get unread messages count
         const messagesQuery = query(
           collection(db, "chats", doc.id, "messages"),
           where("senderId", "!=", user.id),
           where("read", "==", false)
-        )
-        
-        const unreadSnapshot = await getDocs(messagesQuery)
-        const unreadCount = unreadSnapshot.size
-
-        // Log chat data for debugging
-        console.log("Chat data:", {
-          id: doc.id,
-          lastMessage: chatData.lastMessage,
-          lastMessageTime: chatData.lastMessageTime,
-          unreadCount: unreadCount
-        })
-
+        );
+  
+        const unreadSnapshot = await getDocs(messagesQuery);
+        const unreadCount = unreadSnapshot.size;
+  
         return {
           id: doc.id,
           lastMessage: chatData.lastMessage || null,
@@ -102,94 +94,113 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
               otherUserData?.photoURL ||
               `https://ui-avatars.com/api/?name=${encodeURIComponent(otherUserData?.displayName || "User")}&background=random`,
           },
-        }
-      })
-
-      const resolvedChats = await Promise.all(chatPromises)
-      // Ensure proper sorting by lastMessageTime
+        };
+      });
+  
+      const resolvedChats = await Promise.all(chatPromises);
       const sortedChats = resolvedChats.sort((a, b) => {
-        if (!a.lastMessageTime) return 1
-        if (!b.lastMessageTime) return -1
-        return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
-      })
-
-      // Log sorted chats for debugging
-      console.log(
-        "Sorted chats:",
-        sortedChats.map((c) => ({
-          id: c.id,
-          lastMessageTime: c.lastMessageTime,
-          otherUser: c.otherUser.displayName,
-          unreadCount: c.unreadCount
-        })),
-      )
-
-      setChats(sortedChats)
-    })
-
-    return () => unsubscribe()
-  }, [user])
-
+        if (!a.lastMessageTime) return 1;
+        if (!b.lastMessageTime) return -1;
+        return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime();
+      });
+  
+      // Save chats to localStorage for easy access
+      localStorage.setItem(`chats-${user.id}`, JSON.stringify(sortedChats));
+  
+      setChats(sortedChats);
+    });
+  
+    return () => unsubscribe();
+  }, [user]);
+  
+  // Load chats from localStorage on component mount
+  useEffect(() => {
+    if (user) {
+      const savedChats = localStorage.getItem(`chats-${user.id}`);
+      if (savedChats) {
+        setChats(JSON.parse(savedChats));
+      }
+    }
+  }, [user]);
   
   const handleCreateNewChat = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError("")
-    
-    if (!user || !newChatEmail) return
-    
+    e.preventDefault();
+    setError("");
+  
+    if (!user || !newChatEmail) return;
+  
     try {
-      // Find user by email
-      const usersRef = collection(db, "users")
-      const q = query(usersRef, where("email", "==", newChatEmail))
-      const querySnapshot = await getDocs(q)
-      
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", newChatEmail));
+      const querySnapshot = await getDocs(q);
+  
       if (querySnapshot.empty) {
-        setError("User not found")
-        return
+        setError("User not found");
+        return;
       }
-      
-      const otherUser = querySnapshot.docs[0]
-      const otherUserId = otherUser.id
-
+  
+      const otherUser = querySnapshot.docs[0];
+      const otherUserId = otherUser.id;
+  
       if (otherUserId === user.id) {
-        setError("You cannot chat with yourself")
-        return
+        setError("You cannot chat with yourself");
+        return;
       }
-      
+  
       // Check if chat already exists
-      const chatsRef = collection(db, "chats")
-      const chatQuery = query(chatsRef, where("participants", "array-contains", user.id))
-      const chatSnapshot = await getDocs(chatQuery)
-      
+      const chatsRef = collection(db, "chats");
+      const chatQuery = query(chatsRef, where("participants", "array-contains", user.id));
+      const chatSnapshot = await getDocs(chatQuery);
+  
       const existingChat = chatSnapshot.docs.find((doc) => {
-        const data = doc.data()
-        return data.participants.includes(otherUserId)
-      })
-      
+        const data = doc.data();
+        return data.participants.includes(otherUserId);
+      });
+  
       if (existingChat) {
-        setSelectedChat(existingChat.id)
-        setShowNewChatInput(false)
-        setNewChatEmail("")
-        return
+        setSelectedChat(existingChat.id);
+        setShowNewChatInput(false);
+        setNewChatEmail("");
+        return;
       }
-      
+  
       // Create new chat with current timestamp
-      const newChatRef = doc(collection(db, "chats"))
-      const currentTime = new Date().toISOString()
+      const newChatRef = doc(collection(db, "chats"));
+      const currentTime = new Date().toISOString();
       await setDoc(newChatRef, {
         participants: [user.id, otherUserId],
         createdAt: currentTime,
-        lastMessageTime: currentTime, // Add this line to ensure sorting works
-      })
-      
-      setSelectedChat(newChatRef.id)
-      setShowNewChatInput(false)
-      setNewChatEmail("")
+        lastMessageTime: currentTime,
+      });
+  
+      const newChat = {
+        id: newChatRef.id,
+        lastMessage: null,
+        lastMessageTime: currentTime,
+        participants: [user.id, otherUserId],
+        unreadCount: 0,
+        otherUser: {
+          id: otherUserId,
+          displayName: otherUser.data()?.displayName || "User",
+          photoURL: otherUser.data()?.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(otherUser.data()?.displayName || "User")}&background=random`,
+        },
+      };
+  
+      // Save to state
+      setChats((prevChats) => {
+        const updatedChats = [newChat, ...prevChats];
+        localStorage.setItem(`chats-${user.id}`, JSON.stringify(updatedChats));
+        return updatedChats;
+      });
+  
+      setSelectedChat(newChatRef.id);
+      setShowNewChatInput(false);
+      setNewChatEmail("");
     } catch (error) {
-      console.error("Error creating chat:", error)
-      setError("Failed to create chat")
+      console.error("Error creating chat:", error);
+      setError("Failed to create chat");
     }
-  }
+  };
   
   const filteredChats = chats.filter((chat) =>
     chat.otherUser.displayName.toLowerCase().includes(searchTerm.toLowerCase()),
