@@ -239,7 +239,6 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
       </div>
       <ScrollArea className="flex-1">
         <div className="p-2">
-        // Update the chat list rendering section
           {filteredChats.length > 0 ? (
             <>
               {/* Recent chats section */}
