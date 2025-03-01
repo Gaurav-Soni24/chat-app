@@ -41,6 +41,13 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         const otherUserDoc = await getDoc(doc(db, "users", otherUserId))
         const otherUserData = otherUserDoc.data()
 
+        // Log chat data for debugging
+        console.log("Chat data:", {
+          id: doc.id,
+          lastMessage: chatData.lastMessage,
+          lastMessageTime: chatData.lastMessageTime,
+        })
+
         return {
           id: doc.id,
           lastMessage: chatData.lastMessage || null,
@@ -57,13 +64,24 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
       })
 
       const resolvedChats = await Promise.all(chatPromises)
-      setChats(
-        resolvedChats.sort((a, b) => {
-          if (!a.lastMessageTime) return 1
-          if (!b.lastMessageTime) return -1
-          return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
-        }),
+      // Ensure proper sorting by lastMessageTime
+      const sortedChats = resolvedChats.sort((a, b) => {
+        if (!a.lastMessageTime) return 1
+        if (!b.lastMessageTime) return -1
+        return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+      })
+
+      // Log sorted chats for debugging
+      console.log(
+        "Sorted chats:",
+        sortedChats.map((c) => ({
+          id: c.id,
+          lastMessageTime: c.lastMessageTime,
+          otherUser: c.otherUser.displayName,
+        })),
       )
+
+      setChats(sortedChats)
     })
 
     return () => unsubscribe()
@@ -121,11 +139,13 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
         return
       }
 
-      // Create new chat
+      // Create new chat with current timestamp
       const newChatRef = doc(collection(db, "chats"))
+      const currentTime = new Date().toISOString()
       await setDoc(newChatRef, {
         participants: [user.id, otherUserId],
-        createdAt: new Date().toISOString(),
+        createdAt: currentTime,
+        lastMessageTime: currentTime, // Add this line to ensure sorting works
       })
 
       setSelectedChat(newChatRef.id)
@@ -227,7 +247,7 @@ export function ChatSidebar({ user, selectedChat, setSelectedChat }: ChatSidebar
                   </p>
                 </div>
                 {chat.lastMessageTime && (
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                  <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                     {new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 )}

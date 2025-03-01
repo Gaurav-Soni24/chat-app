@@ -106,12 +106,12 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
       unsubscribeMessages()
       unsubscribeTyping()
     }
-  }, [selectedChat, user, otherUser?.id]) // Added otherUser?.id as dependency
+  }, [selectedChat, user]) // Removed otherUser?.id as dependency
 
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, []) // Removed otherUserTyping as dependency
+  }, [messages]) // Removed otherUserTyping as dependency
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -119,6 +119,8 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
     if (!newMessage.trim() || !selectedChat || !user) return
 
     try {
+      const currentTime = new Date().toISOString()
+
       // Add message to Firestore
       await addDoc(collection(db, "chats", selectedChat, "messages"), {
         text: newMessage,
@@ -129,10 +131,10 @@ export function ChatWindow({ user, selectedChat }: ChatWindowProps) {
         reactions: {},
       })
 
-      // Update last message in chat
+      // Update last message in chat with current time
       await updateDoc(doc(db, "chats", selectedChat), {
         lastMessage: newMessage,
-        lastMessageTime: new Date().toISOString(),
+        lastMessageTime: currentTime, // Ensure this is a string ISO date
       })
 
       // Clear typing indicator
